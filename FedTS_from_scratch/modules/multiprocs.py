@@ -60,7 +60,7 @@ class ParentProcess:
         self.n_connected = round(self.args.n_clients*self.args.frac)
         
         # 開始迴圈每一輪
-        if self.args.model == 'FedTS':
+        if self.args.model == 'FedTS' or self.args.model == 'custom_sim' or self.args.model == 'FedTS_v2':
             for curr_rnd in range(self.args.matching_rounds):
                 self.curr_rnd = curr_rnd
                 self.updated = set() # 每一輪剛開始皆創建一個空集合 (set)，在"wait"中會加入東西，server在aggregate時會用到
@@ -144,7 +144,7 @@ class ParentProcess:
             q.put(None) # None 本身也是一個東西，讓每個worker的Queue可以get到這個None並跳入下一個迴圈，並終止。
         print('[main] server done')
 
-        if self.args.model == 'FedTS':
+        if self.args.model == 'FedTS' or self.args.model == 'custom_sim' or self.args.model == 'FedTS_v2':
             self.wandb_FedTS()
         else:            
             self.wandb()
@@ -160,7 +160,7 @@ class ParentProcess:
                 epochs_in_FL = log_data["log"]["epochs_in_FL"]
                 print(f"Client {c_id} : {epochs_in_FL}")
         
-        '''先得到每一個matching/FL round中、執行最久的clients是執行了幾個epochs?'''
+        ''' 每一個client在每個FL Matching Round中都執行了幾個epochs?'''
         epochs_in_FL_record_matrix = np.empty(shape=(self.args.n_clients, self.args.matching_rounds+1))
         for client_id in range(self.args.n_clients):
             log_file_path = os.path.join(self.args.log_path, f"client_{client_id}.txt")
@@ -168,16 +168,14 @@ class ParentProcess:
                 log_data = json.load(file)
             epochs_in_FL_record_matrix[client_id, :] =  log_data["log"]["epochs_in_FL"]
         max_epochs_in_matching_rounds = np.amax(epochs_in_FL_record_matrix, axis=0).tolist()
+        
         '''
-        epochs_in_FL_record_matrix_list = epochs_in_FL_record_matrix.tolist()
-        wandb.init(project = self.args.exp_name, entity="speeeedlee")
-        wandb.log({'max_epochs_in_FL_rounds': max_epochs_in_matching_rounds, 'epochs_in_FL_rounds' : epochs_in_FL_record_matrix_list})
-        wandb.finish()
+        將每個clienty在FL Mathing Round中、沒有trainnig到的epoch部分補上前一個的vlaue、所以會有平行直線、以利視覺化對比
+        最後收尾會有些client比較長、有些client比較短、
+            --> 幫比較短的cliet，延長其最後Accuracy、loss到self.args.epoch_limit + self.args.matching_rounds + 1!
+        而平均值就直接用這個計算，反正都是看最後一個FL round中找最大值，因此不會錯的 
         '''
-
-
-        '''將每個client的兩FL Round中間沒有trainnig的部分補上一樣的值、以利視覺化對比'''
-        n_epochs = self.args.epoch_limit + self.args.matching_rounds # 看多少個epoch的test accuracy，會有誤差；到時候不能真的看最後一筆數據...有點麻煩
+        n_epochs = self.args.epoch_limit + self.args.matching_rounds + 1 # 看多少個epoch的test accuracy
         total_val_acc  = [0]*n_epochs 
         total_val_lss = [0]*n_epochs
         total_test_acc = [0]*n_epochs
@@ -193,39 +191,61 @@ class ParentProcess:
             val_lss = []
             test_lss = []
             test_acc = []
-            for matching_round in range(self.args.matching_rounds + 1):
-                client_epochs = epochs_in_FL[matching_round]
-                max_epoch = max_epochs_in_matching_rounds[matching_round]
+            # 紀錄最後各自train到epoch limit之前的數據
+            for matching_round in range(self.args.matching_rounds):
+                client_epochs = epochs_in_FL[matching_round] + 1 # "+1" is for evaluating the model sent back from server
+                max_epoch = max_epochs_in_matching_rounds[matching_round] + 1
                 # for val_acc
                 val_acc.extend(log_data["log"]["ep_local_val_acc"][:client_epochs])
-                last_val_acc = log_data["log"]["ep_local_val_acc"][client_epochs]
+                last_val_acc = log_data["log"]["ep_local_val_acc"][client_epochs-1]
                 val_acc.extend([last_val_acc]*(int(max_epoch-client_epochs)))
                 log_data["log"]["ep_local_val_acc"] = log_data["log"]["ep_local_val_acc"][client_epochs:]
                 # for val_lss
                 val_lss.extend(log_data["log"]["ep_local_val_lss"][:client_epochs])
-                last_val_lss = log_data["log"]["ep_local_val_lss"][client_epochs]
+                last_val_lss = log_data["log"]["ep_local_val_lss"][client_epochs-1]
                 val_lss.extend([last_val_lss]*(int(max_epoch-client_epochs)))
                 log_data["log"]["ep_local_val_lss"] = log_data["log"]["ep_local_val_lss"][client_epochs:]
                 # for test_acc
                 test_acc.extend(log_data["log"]["ep_local_test_acc"][:client_epochs])
-                last_test_acc = log_data["log"]["ep_local_test_acc"][client_epochs]
+                last_test_acc = log_data["log"]["ep_local_test_acc"][client_epochs-1]
                 test_acc.extend([last_test_acc]*(int(max_epoch-client_epochs)))
                 log_data["log"]["ep_local_test_acc"] = log_data["log"]["ep_local_test_acc"][client_epochs:]
                 # for test_lss
                 test_lss.extend(log_data["log"]["ep_local_test_lss"][:client_epochs])
-                last_test_lss = log_data["log"]["ep_local_test_lss"][client_epochs]
+                last_test_lss = log_data["log"]["ep_local_test_lss"][client_epochs-1]
                 test_lss.extend([last_test_lss]*(int(max_epoch-client_epochs)))
                 log_data["log"]["ep_local_test_lss"] = log_data["log"]["ep_local_test_lss"][client_epochs:]
+            
+            # 紀錄最後一次similarity matching後的數據
+            curr_records = len(val_acc)
+            final_extend = n_epochs - curr_records
+            # for val_acc
+            val_acc.extend(log_data["log"]["ep_local_val_acc"]) # 這裡面的第一筆數據應該會是最後一次similarity matching後回傳的model之evaluation
+            last_val_acc = log_data["log"]["ep_local_val_acc"][-1]
+            val_acc.extend([last_val_acc]*(int(final_extend)))
+            # for val_lss
+            val_lss.extend(log_data["log"]["ep_local_val_lss"])
+            last_val_lss = log_data["log"]["ep_local_val_lss"][-1]
+            val_lss.extend([last_val_lss]*(int(final_extend)))
+            # for test_acc
+            test_acc.extend(log_data["log"]["ep_local_test_acc"])
+            last_test_acc = log_data["log"]["ep_local_test_acc"][-1]
+            test_acc.extend([last_test_acc]*(int(final_extend)))
+            # for test_lss
+            test_lss.extend(log_data["log"]["ep_local_test_lss"])
+            last_test_lss = log_data["log"]["ep_local_test_lss"][-1]
+            test_lss.extend([last_test_lss]*(int(final_extend)))
+
             # 記錄到wandb
             for epoch in range(n_epochs):
                 wandb.log({"Epoch": epoch + 1, "Validation Accuracy": val_acc[epoch], 
                         "Validation Loss": val_lss[epoch], "Test Loss": test_lss[epoch], 
                         "Test Accuracy": test_acc[epoch]})
                 
-            total_val_acc = [a + b for a, b in zip(total_val_acc, val_acc[:n_epochs])]
-            total_val_lss = [a + b for a, b in zip(total_val_lss, val_lss[:n_epochs])]
-            total_test_acc = [a + b for a, b in zip(total_test_acc, test_acc[:n_epochs])]
-            total_test_lss = [a + b for a, b in zip(total_test_lss, test_lss[:n_epochs])]
+            total_val_acc = [a + b for a, b in zip(total_val_acc, val_acc)]
+            total_val_lss = [a + b for a, b in zip(total_val_lss, val_lss)]
+            total_test_acc = [a + b for a, b in zip(total_test_acc, test_acc)]
+            total_test_lss = [a + b for a, b in zip(total_test_lss, test_lss)]
 
             # 結束當前客戶端之wandb運行
             wandb.finish()

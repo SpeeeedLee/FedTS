@@ -27,7 +27,12 @@ class Client(ClientModule):
 
     def __init__(self, args, w_id, g_id, sd):
         super(Client, self).__init__(args, w_id, g_id, sd)
-        self.model = CNN().cuda(self.gpu_id)
+        if self.args.dataset == 'cifar100':
+            self.model = CNN_100().cuda(g_id)
+        elif self.args.dataset == 'cifar10':
+            self.model = CNN().cuda(g_id)
+        else:
+            raise NotImplementedError('還沒Build對應的model')
         self.parameters = list(self.model.parameters()) 
         self.local_dict = {}
 
@@ -117,18 +122,27 @@ class Client(ClientModule):
             
             # 儲存train完這個epoch的model至sd[f{c_id}_FedTS]['current_model']，以利進行cosine_criteria檢查
             self.local_dict['current_model'] = get_state_dict(self.model)
+            
 
-            if ep>=1:
-                if self.curr_rnd == 0: # Since now do the precise similarity matching
+            ep += 1
+
+            '''
+            這邊的邏輯是:
+                在matching rounds都做完之前:
+                    檢查是否reach cosine criteria --> 若是、停止training、回傳給server；
+                在matching rounds都結束之後:
+                    不應該再檢查consine criteria --> 只檢查是否reach epoch limit
+            '''
+            if self.curr_rnd < self.args.matching_rounds:
+                if ep > 1:
                     if self.check_cosine_criteria() == True : 
                         self.reach_cosine_criteria = True
+            else:
                 if self.check_epoch_limit_criteria(current_epoch = ep) == True:
                     self.reach_epoch_limit = True
 
             # 儲存train完這個epoch的model至local_dict['last_model']，以利下個epoch進行cosine_criteria檢查
             self.local_dict['last_model'] = get_state_dict(self.model)
-
-            ep += 1
 
         # 一個FL round結束後，拿client的最後一個epoch之evaluation結果出來紀錄    
         self.log['rnd_local_val_acc'].append(val_local_acc)

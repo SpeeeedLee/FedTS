@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 
 from misc.utils import *
-from models.nets import *
+from models.nets import CNN, CNN_100
 from modules.federated import ClientModule
 
 
@@ -12,8 +12,15 @@ class Client(ClientModule):
 
     def __init__(self, args, w_id, g_id, sd):
         super(Client, self).__init__(args, w_id, g_id, sd)
-        self.model = CNN().cuda(self.gpu_id)
+        if self.args.dataset == 'cifar100':
+            self.model = CNN_100().cuda(g_id)
+        elif self.args.dataset == 'cifar10':
+            self.model = CNN().cuda(g_id)
+        else:
+            raise NotImplementedError('還沒Build對應的model')
         self.parameters = list(self.model.parameters()) 
+
+
 
     def init_state(self):
         self.optimizer =  torch.optim.SGD(self.parameters, lr=0.01, weight_decay=1e-5, momentum=0.9) # follow pFedGraph

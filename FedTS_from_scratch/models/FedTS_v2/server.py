@@ -8,10 +8,9 @@ from models.nets import *
 from modules.federated import ServerModule
 
 '''
-There exist many methods for similarity matching
-ex: Functional Embedding、Cosine Similarity、...
-
-This file implement cosine similarity of the model weights !
+This file implement FedTS
+There exist many possible ways for FedTS, 
+"clients upload there model only when cosine do not change much" was implemented in this file
 '''
 
 
@@ -33,6 +32,7 @@ class Server(ServerModule):
         else:
             raise NotImplementedError('還沒Build對應的model')
         # store the initail model to the sd
+        self.sd['anchor_global_model'] = get_state_dict(self.model)
         self.sd['initial_global_model'] = get_state_dict(self.model)
         self.sim_matrices = []
         self.cos_matrices = []
@@ -42,7 +42,7 @@ class Server(ServerModule):
         '''
         update current model weights to the sd['global']
         if it is the first round, then the initial CNN model weights will be used
-        ** Only one server instance, the server object's weights will evolve through rounds !
+        ** Only one server instance, so the server object's weights will evolve through rounds !
         '''
         self.round_begin = time.time()
         self.curr_rnd = curr_rnd
@@ -88,8 +88,11 @@ class Server(ServerModule):
 
         st = time.time()
         ratio = (np.array(local_train_sizes)/np.sum(local_train_sizes)).tolist()
-        self.set_weights(self.model, self.aggregate(local_weights, ratio)) # 這邊還只是在做 FedAvg
-        self.logger.print(f'global model has been updated ({time.time()-st:.2f}s)')
+        self.set_weights(self.model, self.aggregate(local_weights, ratio)) # 這邊還只是在做 FedAvg --> 但是對FedTS + FedAvg很有用欸...
+        self.sd['anchor_global_model'] = get_state_dict(self.model) # 這行在決定是否有要更新anchor model! -->FedTS_v2 有!
+        
+        
+        self.logger.print(f'anchor global model has been updated ({time.time()-st:.2f}s)')
 
         # 做 similarity matching
         # 改成用cosine matrix 做 update

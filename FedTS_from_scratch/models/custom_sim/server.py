@@ -7,12 +7,6 @@ from misc.utils import *
 from models.nets import *
 from modules.federated import ServerModule
 
-'''
-There exist many methods for similarity matching
-ex: Functional Embedding、Cosine Similarity、...
-
-This file implement cosine similarity of the model weights !
-'''
 
 
 class Server(ServerModule):
@@ -33,7 +27,7 @@ class Server(ServerModule):
         else:
             raise NotImplementedError('還沒Build對應的model')
         # store the initail model to the sd
-        self.sd['initial_global_model'] = get_state_dict(self.model)
+        self.sd['anchor_global_model'] = get_state_dict(self.model)
         self.sim_matrices = []
         self.cos_matrices = []
         self.normalized_cos_matrices = []
@@ -42,7 +36,7 @@ class Server(ServerModule):
         '''
         update current model weights to the sd['global']
         if it is the first round, then the initial CNN model weights will be used
-        ** Only one server instance, the server object's weights will evolve through rounds !
+        ** Only one server instance, so the server object's weights will evolve through rounds !
         '''
         self.round_begin = time.time()
         self.curr_rnd = curr_rnd
@@ -57,15 +51,15 @@ class Server(ServerModule):
         st = time.time()
         local_weights = [None]*self.args.n_clients
         local_weights_numpy = [None]*self.args.n_clients
-        local_weights_numpy_dist_w_initial = [None]*self.args.n_clients
+        local_weights_numpy_dist_w_anchor = [None]*self.args.n_clients
         local_train_sizes = [None]*self.args.n_clients
         for c_id in updated:
             local_weights[c_id] = self.sd[c_id]['model'].copy() # 加入一個client的weights
             # 轉換成1D numpy array!
             local_weights_numpy[c_id] = flatten_state_dict(self.sd[c_id]['model'].copy())
-            # 利用向量之"末減初"，來計算client current model 與 initial global model 的差向量
-            local_weights_numpy_dist_w_initial[c_id] = flatten_state_dict(self.sd[c_id]['model'].copy()) \
-                                                        - flatten_state_dict(self.sd['initial_global_model'].copy()) 
+            # 利用向量之"末減初"，來計算client current model 與 anchor global model 的差向量
+            local_weights_numpy_dist_w_anchor[c_id] = flatten_state_dict(self.sd[c_id]['model'].copy()) \
+                                                        - flatten_state_dict(self.sd['anchor_global_model'].copy()) 
             local_train_sizes[c_id] = self.sd[c_id]['train_size']
             del self.sd[c_id] # 刪除sd中的c_id dict 
         self.logger.print(f'all clients have been uploaded ({time.time()-st:.2f}s)')
@@ -77,8 +71,8 @@ class Server(ServerModule):
         sim_matrix = np.empty(shape=(n_connected, n_connected))
         for i in range(n_connected):
             for j in range(n_connected):
-                cos_matrix[i, j] = 1 - cosine(local_weights_numpy_dist_w_initial[i], \
-                                                local_weights_numpy_dist_w_initial[j])
+                cos_matrix[i, j] = 1 - cosine(local_weights_numpy_dist_w_anchor[i], \
+                                                local_weights_numpy_dist_w_anchor[j])
         self.cos_matrices.append(cos_matrix)
         # if self.args.agg_norm == 'exp':
         #     # 做 exponential 轉換
@@ -88,8 +82,11 @@ class Server(ServerModule):
 
         st = time.time()
         ratio = (np.array(local_train_sizes)/np.sum(local_train_sizes)).tolist()
-        self.set_weights(self.model, self.aggregate(local_weights, ratio)) # 這邊還只是在做 FedAvg
-        self.logger.print(f'global model has been updated ({time.time()-st:.2f}s)')
+        self.set_weights(self.model, self.aggregate(local_weights, ratio)) # 這邊還只是在做 FedAvg --> 但是對FedTS + FedAvg很有用欸...
+        # self.sd['anchor_global_model'] = get_state_dict(self.model) # 這行在決定是否有要更新anchor model!
+        # 印象中，若是更新anchor model，以FedAvg model做computation效果會很差!
+        
+        self.logger.print(f'anchor global model has been updated ({time.time()-st:.2f}s)')
 
         # 做 similarity matching
         # 改成用cosine matrix 做 update

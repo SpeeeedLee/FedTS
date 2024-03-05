@@ -19,7 +19,12 @@ class Client(ClientModule):
     '''
     def __init__(self, args, w_id, g_id, sd):
         super(Client, self).__init__(args, w_id, g_id, sd)
-        self.model = CNN().cuda(g_id) #實例化一個初始模型，並丟到gpu
+        if self.args.dataset == 'cifar100':
+            self.model = CNN_100().cuda(g_id)
+        elif self.args.dataset == 'cifar10':
+            self.model = CNN().cuda(g_id)
+        else:
+            raise NotImplementedError('還沒Build對應的model')
         self.parameters = list(self.model.parameters()) # the elements in this list are "torch.nn.Parameter" 對象 
 
 

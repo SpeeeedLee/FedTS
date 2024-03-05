@@ -27,6 +27,17 @@ def main(args):
         print(f"Using {args.model} Algotihm")
         from models.FedTS.server import Server
         from models.FedTS.client import Client
+    
+    elif args.model == 'FedTS_v2':
+        print(f"Using {args.model} Algotihm")
+        from models.FedTS_v2.server import Server
+        from models.FedTS_v2.client import Client
+
+    elif args.model == 'custom_sim':
+        print(f"Using {args.model} Algotihm")
+        from models.custom_sim.server import Server
+        from models.custom_sim.client import Client
+
 
     else:
         print(f'incorrect model was given: {args.model}')
@@ -52,8 +63,23 @@ def set_config(args):
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
     trial = f'{args.dataset}_{args.mode}/clients_{args.n_clients}/{now}_{args.model}'
 
+    
+    if args.model == 'custom_sim':
+        args.matching_rounds = len(args.custom_epochs_list)
+
+    if args.dataset == 'cifar10':
+        args.n_clss = 10
+    elif args.dataset == 'cifar100':
+        args.n_clss = 100
+    
+    
     if args.model == 'FedTS': 
         args.exp_name = f'{args.dataset}_{args.mode}_c_{args.n_clients}_{args.model}_cos{args.ready_cosine}_r{args.matching_rounds}'
+    elif args.model == 'custom_sim':
+        custom_epochs_list = '_'.join(map(str, args.custom_epochs_list))
+        args.exp_name = f'{args.dataset}_{args.mode}_c_{args.n_clients}_{args.model}_r{args.matching_rounds}_e' + custom_epochs_list
+    elif args.model == 'FedTS_v2':
+        args.exp_name = f'{args.dataset}_{args.mode}_c_{args.n_clients}_{args.model}_r{args.matching_rounds}'
     else:
         args.exp_name = f'{args.dataset}_{args.mode}_c_{args.n_clients}_{args.model}_e{args.n_eps}_r{args.n_rnds}'
     args.data_path = f'{args.base_path}/datasets'
@@ -62,10 +88,6 @@ def set_config(args):
 
     # args.weight_decay = 1e-6
     # args.base_lr = 1e-3
-
-
-    if args.dataset == 'cifar10':
-        args.n_clss = 10
 
     start_time =  datetime.now().strftime("%Y%m%d_%H%M%S")
     print(f"start time : {start_time}")

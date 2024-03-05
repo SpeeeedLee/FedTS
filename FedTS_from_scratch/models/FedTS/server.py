@@ -25,7 +25,12 @@ class Server(ServerModule):
     def __init__(self, args, sd, gpu_server):
         super(Server, self).__init__(args, sd, gpu_server)
         # Create a model instance and store it in the assigned GPU
-        self.model = CNN().cuda(self.gpu_id)
+        if self.args.dataset == 'cifar100':
+            self.model = CNN_100().cuda(gpu_server)
+        elif self.args.dataset == 'cifar10':
+            self.model = CNN().cuda(gpu_server)
+        else:
+            raise NotImplementedError('還沒Build對應的model')
         # store the initail model to the sd
         self.sd['anchor_global_model'] = get_state_dict(self.model)
         self.sim_matrices = []
@@ -84,6 +89,8 @@ class Server(ServerModule):
         ratio = (np.array(local_train_sizes)/np.sum(local_train_sizes)).tolist()
         self.set_weights(self.model, self.aggregate(local_weights, ratio)) # 這邊還只是在做 FedAvg --> 但是對FedTS + FedAvg很有用欸...
         # self.sd['anchor_global_model'] = get_state_dict(self.model) # 這行在決定是否有要更新anchor model!
+        # 印象中，若是更新anchor model，以FedAvg model做computation效果會很差!
+        
         self.logger.print(f'anchor global model has been updated ({time.time()-st:.2f}s)')
 
         # 做 similarity matching

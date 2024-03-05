@@ -20,7 +20,13 @@ class Server(ServerModule):
     def __init__(self, args, sd, gpu_server):
         super(Server, self).__init__(args, sd, gpu_server)
         # Create a model instance and store it in the assigned GPU
-        self.model = CNN().cuda(self.gpu_id)
+        if self.args.dataset == 'cifar100':
+            self.model = CNN_100().cuda(gpu_server)
+        elif self.args.dataset == 'cifar10':
+            self.model = CNN().cuda(gpu_server)
+        else:
+            raise NotImplementedError('還沒Build對應的model')
+        
         # store the initail model to the sd
         self.sd['initial_global_model'] = get_state_dict(self.model) 
         # 在FedAvg中不會被用到，但還是可以拿來計算我們有興趣的cosine、similarity matrix

@@ -4,13 +4,18 @@ import numpy as np
 from scipy.spatial.distance import cosine
 
 from misc.utils import *
-from models.nets import *
+from models.nets import CNN, CNN_100
 from modules.federated import ServerModule
 
 class Server(ServerModule):
     def __init__(self, args, sd, gpu_server):
         super(Server, self).__init__(args, sd, gpu_server)
-        self.model = CNN().cuda(self.gpu_id)
+        if self.args.dataset == 'cifar100':
+            self.model = CNN_100().cuda(gpu_server)
+        elif self.args.dataset == 'cifar10':
+            self.model = CNN().cuda(gpu_server)
+        else:
+            raise NotImplementedError('還沒Build對應的model')
         # store the initail model to the sd
         self.sd['initial_global_model'] = get_state_dict(self.model)
         self.sim_matrices = []

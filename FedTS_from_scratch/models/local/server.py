@@ -13,13 +13,16 @@ class Server(ServerModule):
         if self.args.dataset == 'cifar100':
             self.model = CNN_100().cuda(gpu_server)
         elif self.args.dataset == 'cifar10':
+            initial_weights = torch.load('../initial_model/CNN/model_1.pkl')
             self.model = CNN().cuda(gpu_server)
+            self.model.load_state_dict(initial_weights)
         else:
             raise NotImplementedError('還沒Build對應的model')
         # store the initail model to the sd
         self.sd['initial_global_model'] = get_state_dict(self.model)
         self.sim_matrices = []
         self.cos_matrices = []
+        self.normalized_cos_matrices = []
 
     def on_round_begin(self, curr_rnd):
         self.round_begin = time.time()
@@ -84,6 +87,10 @@ class Server(ServerModule):
         row_sums = sim_matrix.sum(axis=1) # a 1D array, each element is a row sum
         sim_matrix = sim_matrix / row_sums[:, np.newaxis] # np.newaxis 只是加一個維度，並不放入任何元素
         self.sim_matrices.append(sim_matrix)
+        
+        row_sums = cos_matrix.sum(axis=1)
+        normalized_cos_matrix = cos_matrix / row_sums[:, np.newaxis] # np.newaxis 只是加一個維度，並不放入任何元素
+        self.normalized_cos_matrices.append(normalized_cos_matrix)
 
         self.logger.print(f'local model has been updated ({time.time()-st:.2f}s)')
 
@@ -99,5 +106,6 @@ class Server(ServerModule):
         torch_save(self.args.checkpt_path, 'server_state.pt', {
             'model': get_state_dict(self.model),
             'sim_matrices': self.sim_matrices,
-            'cos_matrices' : self.cos_matrices
+            'cos_matrices' : self.cos_matrices, 
+            'normalized_cos_matrices' : self.normalized_cos_matrices
         })

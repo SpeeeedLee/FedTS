@@ -11,7 +11,7 @@ from collections import Counter
 import matplotlib.pyplot as plt
 
 dataset_name = 'cifar10'  # Dataset name，改這裡
-partition_method = 'pathological_pair' # partition method，改這裡
+partition_method = 'random_iid' # partition method，改這裡
 n_clients = 10 # client數量，改這裡
 n_classes = 10 # class數量，改這裡
 all_data_path = f'../../datasets/{dataset_name}/{partition_method}/{n_clients}'

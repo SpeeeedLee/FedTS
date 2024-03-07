@@ -20,11 +20,14 @@ class Client(ClientModule):
         super(Client, self).__init__(args, w_id, g_id, sd)
         if self.args.dataset == 'cifar100':
             self.model = CNN_100().cuda(g_id)
+            self.cluster_model = CNN_100().cuda(g_id)
         elif self.args.dataset == 'cifar10':
             self.model = CNN().cuda(g_id)
+            self.cluster_model = CNN().cuda(g_id)
         else:
             raise NotImplementedError('還沒Build對應的model')
         self.parameters = list(self.model.parameters()) 
+        
 
 
     def init_state(self):
@@ -55,6 +58,7 @@ class Client(ClientModule):
         # self.prev_w = convert_np_to_tensor(update['model'], self.gpu_id)
         # Maybe can use this in FedTS
         set_state_dict(self.model, update['model'], self.gpu_id, skip_stat=False, skip_mask=False)
+        set_state_dict(self.cluster_model, update['model'], self.gpu_id, skip_stat=False, skip_mask=False)
 
     def on_round_begin(self):
         self.train()
@@ -90,8 +94,19 @@ class Client(ClientModule):
                 self.optimizer.zero_grad() # 避免梯度累積!
                 y_hat = self.model(images)
                 train_lss = F.cross_entropy(y_hat, labels) 
-                train_lss.backward()
                 train_losses.append(train_lss.item())
+
+                regularize_loss = 0
+                if self.curr_rnd >= 1 :
+                    # 一開始不做正則化! 因為還沒有server回傳的anchor model !
+                    # Regularization
+                    # print('開始考慮正則化')
+                    current_model =  flatten_state_dict_to_tensor(get_state_dict(self.model).copy(), self.gpu_id)       # 先轉成state_dict可以避免model之前的梯度累積
+                    cluster_model = flatten_state_dict_to_tensor(get_state_dict(self.cluster_model).copy(), self.gpu_id)
+                    regularize_loss = 0.01 * torch.dot(cluster_model, current_model) / torch.linalg.norm(current_model)
+                
+                total_loss = train_lss + regularize_loss
+                total_loss.backward()
                 self.optimizer.step()
 
             #　每個epochs結束後，再做一次evaluations

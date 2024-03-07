@@ -38,6 +38,13 @@ python main.py --model similarity --dataset cifar100 --mode cluster_dirichlet_v1
 # FedTS
 python main.py --model FedTS --dataset cifar100 --mode cluster_dirichlet_v1 --n-clients 10 --ready-cosine 0.98 --matching-rounds 1 --epoch-limit 200
 
+# FedTS_v2
+python main.py --model FedTS_v2 --dataset cifar100 --mode cluster_dirichlet_v1 --n-clients 10 --ready-cosine 0.98 --matching-rounds 5 --epoch-limit 100
+
+# custom_sim
+python main.py --model custom_sim --dataset cifar10 --mode cluster_dirichlet_v1 --n-clients 10 --custom-epochs-list 10 --epoch-limit 200
+
+
 #### Generate Data ####
 cd data
 python generators/cluster_dirichlet_v1.py

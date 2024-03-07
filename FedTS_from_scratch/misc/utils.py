@@ -10,11 +10,22 @@ import numpy as np
 import os
 import torch
 import json
+import cvxpy as cp
 
 def flatten_state_dict(state_dict):
     '''Convert Ordered Dict to 1D numpy Array'''
     flat_weights = [weights.flatten() for weights in state_dict.values()]
     return np.concatenate(flat_weights)
+
+
+def flatten_state_dict_to_tensor(state_dict, gpu_id):
+    '''
+    Convert Ordered Dict to 1D PyTorch Tensor
+    Requires Grad = True so that the model can later be 求導
+    '''
+    flat_weights = [torch.flatten(torch.tensor(weights, device = f'cuda:{gpu_id}')).detach().clone().requires_grad_(True) for weights in state_dict.values()]
+    return torch.cat(flat_weights)
+
 
 def torch_save(base_dir, filename, data):
     os.makedirs(base_dir, exist_ok=True)
@@ -65,3 +76,28 @@ def save(base_dir, filename, data):
     os.makedirs(base_dir, exist_ok=True)
     with open(os.path.join(base_dir, filename), 'w+') as outfile:
         json.dump(data, outfile)
+
+
+def optimizing_graph_matrix_neighbor(model_cosine_matrix, alpha, fed_avg_freqs):
+    n = model_cosine_matrix.shape[0]
+    graph_matrix = np.zeros((n, n))
+    p = np.array(list(fed_avg_freqs.values()))
+    P = alpha * np.identity(n)
+    # P = cp.atoms.affine.wraps.psd_wrap(P)
+    G = - np.identity(n)
+    h = np.zeros(n)
+    A = np.ones((1, n))
+    b = np.ones(1)
+    for i in range(n):
+        model_cosine_vector = model_cosine_matrix[i]
+        d = model_cosine_vector
+        q = d - 2 * alpha * p
+        x = cp.Variable(n)
+        prob = cp.Problem(cp.Minimize(cp.quad_form(x, P) + q.T @ x),
+                  [G @ x <= h,
+                   A @ x == b]
+                  )
+        prob.solve()
+
+        graph_matrix[i, :] = torch.Tensor(x.value)
+    return graph_matrix

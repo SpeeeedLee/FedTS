@@ -29,7 +29,10 @@ class Server(ServerModule):
         if self.args.dataset == 'cifar100':
             self.model = CNN_100().cuda(gpu_server)
         elif self.args.dataset == 'cifar10':
+            initial_weights = torch.load('../initial_model/CNN/model_1.pkl')
             self.model = CNN().cuda(gpu_server)
+            self.model.load_state_dict(initial_weights)
+            # self.model = CNN().cuda(gpu_server)
         else:
             raise NotImplementedError('還沒Build對應的model')
         # store the initail model to the sd
@@ -37,6 +40,7 @@ class Server(ServerModule):
         self.sim_matrices = []
         self.cos_matrices = []
         self.normalized_cos_matrices = []
+        self.graph_matrices = []
 
     def on_round_begin(self, curr_rnd):
         '''
@@ -70,9 +74,9 @@ class Server(ServerModule):
             del self.sd[c_id] # 刪除sd中的c_id dict 
         self.logger.print(f'all clients have been uploaded ({time.time()-st:.2f}s)')
         
+        st = time.time()
         n_connected = round(self.args.n_clients*self.args.frac)
-
-        # Compute cosine & similarity matrix
+        ###### Compute cosine, normalized cosine, similarity matrix  ########
         cos_matrix = np.empty(shape=(n_connected, n_connected))
         sim_matrix = np.empty(shape=(n_connected, n_connected))
         for i in range(n_connected):
@@ -80,29 +84,33 @@ class Server(ServerModule):
                 cos_matrix[i, j] = 1 - cosine(local_weights_numpy_dist_w_initial[i], \
                                                 local_weights_numpy_dist_w_initial[j])
         self.cos_matrices.append(cos_matrix)
-        # if self.args.agg_norm == 'exp':
-        #     # 做 exponential 轉換
+        ############# 計算normalize cosine matrix #######################
+        row_sums = cos_matrix.sum(axis=1)
+        normalized_cos_matrix = cos_matrix / row_sums[:, np.newaxis] # np.newaxis 只是加一個維度，並不放入任何元素
+        self.normalized_cos_matrices.append(normalized_cos_matrix)
+        #################################################################
+        ##########    做 exponential 轉換，得到similarity matrix #########
         sim_matrix = np.exp(self.args.norm_scale * cos_matrix)
         row_sums = sim_matrix.sum(axis=1)
         sim_matrix = sim_matrix / row_sums[:, np.newaxis] # np.newaxis 只是加一個維度，並不放入任何元素
-
-        st = time.time()
+        self.sim_matrices.append(sim_matrix)
+        #################################################################
         ratio = (np.array(local_train_sizes)/np.sum(local_train_sizes)).tolist()
         self.set_weights(self.model, self.aggregate(local_weights, ratio)) # 這邊還只是在做 FedAvg
         self.logger.print(f'global model has been updated ({time.time()-st:.2f}s)')
 
-        # 做 similarity matching
-        # 改成用cosine matrix 做 update
+        ########### 解Convex Optimization Problem，並用得到的Graph_matrix來計算similarity matirx ##############
         st = time.time()
-        # 要先normalize cosine matrix
-        row_sums = cos_matrix.sum(axis=1)
-        normalized_cos_matrix = cos_matrix / row_sums[:, np.newaxis] # np.newaxis 只是加一個維度，並不放入任何元素
-        self.normalized_cos_matrices.append(normalized_cos_matrix)
+        # 先學pFedGraph，檢查cos_matrix中是否有值大於0.9，有的話直接幫它改成1
+        cos_matrix[cos_matrix > 0.9] = 1
+        alpha = 0.8 # pFedGraph建議在0.7 ~ 1.0 之間
+        fed_avg_freqs = {key: 1/self.args.n_clients for key in range(self.args.n_clients)} # 先假設所有client持有的data數量一樣多
+        graph_matrix = optimizing_graph_matrix_neighbor(-cos_matrix, alpha, fed_avg_freqs)
         for i in range(self.args.n_clients):
-            aggr_local_model_weights = self.aggregate(local_weights, normalized_cos_matrix[i, :])
+            aggr_local_model_weights = self.aggregate(local_weights, graph_matrix[i, :])
             if f'personalized_{i}' in self.sd: del self.sd[f'personalized_{i}'] 
             self.sd[f'personalized_{i}'] = {'model': aggr_local_model_weights} # 重新在sd中寫入 personalized_{c_id}，以供client讀取
-        self.sim_matrices.append(sim_matrix)
+        self.graph_matrices.append(graph_matrix)
         self.logger.print(f'local model has been updated ({time.time()-st:.2f}s)')
 
     def set_weights(self, model, state_dict):
@@ -119,5 +127,6 @@ class Server(ServerModule):
             'model': get_state_dict(self.model), # this is a FedAvg model，沒什麼用
             'sim_matrices': self.sim_matrices, 
             'cos_matrices' : self.cos_matrices, 
-            'normalized_cos_matrices' : self.normalized_cos_matrices
+            'normalized_cos_matrices' : self.normalized_cos_matrices,
+            'graph_matrices' : self.graph_matrices
         })

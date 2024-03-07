@@ -168,14 +168,15 @@ class ParentProcess:
                 log_data = json.load(file)
             epochs_in_FL_record_matrix[client_id, :] =  log_data["log"]["epochs_in_FL"]
         max_epochs_in_matching_rounds = np.amax(epochs_in_FL_record_matrix, axis=0).tolist()
+        min_epochs_in_matching_rounds = np.amin(epochs_in_FL_record_matrix, axis=0).tolist()
         
         '''
-        將每個clienty在FL Mathing Round中、沒有trainnig到的epoch部分補上前一個的vlaue、所以會有平行直線、以利視覺化對比
+        將每個client在FL Mathing Round中、沒有trainnig到的epoch部分補上前一個的vlaue、所以會有平行直線、以利視覺化對比
         最後收尾會有些client比較長、有些client比較短、
-            --> 幫比較短的cliet，延長其最後Accuracy、loss到self.args.epoch_limit + self.args.matching_rounds + 1!
+            --> 幫比較短的cliet，延長其最後Accuracy、loss到self.args.epoch_limit + self.args.matching_rounds + 1 + (max_epoch_round - min_epoch_round)!
         而平均值就直接用這個計算，反正都是看最後一個FL round中找最大值，因此不會錯的 
         '''
-        n_epochs = self.args.epoch_limit + self.args.matching_rounds + 1 # 看多少個epoch的test accuracy
+        n_epochs = int(self.args.epoch_limit + self.args.matching_rounds + 1 + (max_epochs_in_matching_rounds[0] - min_epochs_in_matching_rounds[0]))# 看多少個epoch的test accuracy
         total_val_acc  = [0]*n_epochs 
         total_val_lss = [0]*n_epochs
         total_test_acc = [0]*n_epochs
@@ -284,6 +285,7 @@ class ParentProcess:
         cos_matrices = saved_state['cos_matrices']
         sim_matrices = saved_state['sim_matrices']
         normalized_cos_matrices = saved_state['normalized_cos_matrices']
+        graph_matrices = saved_state['graph_matrices']
     
         fl_round = 0
         labels_row = [f"c_{i}" for i in range(self.args.n_clients)]
@@ -323,6 +325,18 @@ class ParentProcess:
             wandb.log({f"similarity_heatmap_{fl_round}_": wandb.plots.HeatMap(x_labels = labels_column, y_labels = labels_row, matrix_values = sim_matrix,  show_text=True)})
         wandb.finish()
 
+        fl_round = 0
+        wandb.init(project = self.args.exp_name, entity="speeeedlee", name = "heatmap_graph")
+        for graph_matrix in graph_matrices:
+            fl_round += 1
+            # 創建並上傳熱力圖
+            # 先替cos_matrix 加兩個column，全0、全1
+            zeros_column = np.zeros((graph_matrix.shape[0], 1))    # 創建一個全0的行
+            ones_column = np.ones((graph_matrix.shape[0], 1))      # 創建一個全1的行
+            graph_matrix = np.hstack((graph_matrix, zeros_column, ones_column))
+            wandb.log({f"graph_heatmap_{fl_round}_": wandb.plots.HeatMap(x_labels = labels_column, y_labels = labels_row, matrix_values = graph_matrix,  show_text=True)})
+        wandb.finish()
+        
 
 
     def wandb(self):
@@ -396,6 +410,7 @@ class ParentProcess:
             cos_matrices = saved_state['cos_matrices']
             sim_matrices = saved_state['sim_matrices']
             normalized_cos_matrices = saved_state['normalized_cos_matrices']
+            graph_matrices = saved_state['graph_matrices']
         
             fl_round = 0
             labels_row = [f"c_{i}" for i in range(self.args.n_clients)]
@@ -433,6 +448,18 @@ class ParentProcess:
                 ones_column = np.ones((sim_matrix.shape[0], 1))      # 創建一個全1的行
                 sim_matrix = np.hstack((sim_matrix, zeros_column, ones_column))
                 wandb.log({f"similarity_heatmap_{fl_round}_": wandb.plots.HeatMap(x_labels = labels_column, y_labels = labels_row, matrix_values = sim_matrix,  show_text=True)})
+            wandb.finish()
+
+            fl_round = 0
+            wandb.init(project = self.args.exp_name, entity="speeeedlee", name = "heatmap_graph")
+            for graph_matrix in graph_matrices:
+                fl_round += 1
+                # 創建並上傳熱力圖
+                # 先替cos_matrix 加兩個column，全0、全1
+                zeros_column = np.zeros((graph_matrix.shape[0], 1))    # 創建一個全0的行
+                ones_column = np.ones((graph_matrix.shape[0], 1))      # 創建一個全1的行
+                graph_matrix = np.hstack((graph_matrix, zeros_column, ones_column))
+                wandb.log({f"graph_heatmap_{fl_round}_": wandb.plots.HeatMap(x_labels = labels_column, y_labels = labels_row, matrix_values = graph_matrix,  show_text=True)})
             wandb.finish()
 
             

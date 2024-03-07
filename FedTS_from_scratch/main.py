@@ -79,7 +79,7 @@ def set_config(args):
         custom_epochs_list = '_'.join(map(str, args.custom_epochs_list))
         args.exp_name = f'{args.dataset}_{args.mode}_c_{args.n_clients}_{args.model}_r{args.matching_rounds}_e' + custom_epochs_list
     elif args.model == 'FedTS_v2':
-        args.exp_name = f'{args.dataset}_{args.mode}_c_{args.n_clients}_{args.model}_r{args.matching_rounds}'
+        args.exp_name = f'{args.dataset}_{args.mode}_c_{args.n_clients}_{args.model}_cos{args.ready_cosine}_r{args.matching_rounds}'
     else:
         args.exp_name = f'{args.dataset}_{args.mode}_c_{args.n_clients}_{args.model}_e{args.n_eps}_r{args.n_rnds}'
     args.data_path = f'{args.base_path}/datasets'

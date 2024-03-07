@@ -24,11 +24,11 @@ class myParser:
 
         self.parser.add_argument('--base-path', type=str, default='../')
 
-        self.parser.add_argument('--mode', type=str, default='random_iid', choices=['ramdom_iid', 'pathological_pair', 'cluster_dirichlet_v1'])
+        self.parser.add_argument('--mode', type=str, default='random_iid', choices=['ramdom_iid', 'pathological_pair', 'cluster_dirichlet_v1', 'cluster_dirichlet_v2'])
 
         # Hyperparameter for FedTS
         self.parser.add_argument('--ready-cosine', type=float, default=0.99)
-        self.parser.add_argument('--epoch-limit', type=int, default=200) # Do not implement succesfully yet
+        self.parser.add_argument('--epoch-limit', type=int, default=200)
         self.parser.add_argument('--matching-rounds', type=int, default=20)
 
         # Hyperparameter for custom_sim
